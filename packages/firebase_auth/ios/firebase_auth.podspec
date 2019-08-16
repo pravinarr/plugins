@@ -21,9 +21,13 @@ Firebase Auth plugin for Flutter.
   s.public_header_files = 'Classes/**/*.h'
   s.ios.deployment_target = '8.0'
   s.dependency 'Flutter'
-  s.dependency 'Firebase/Auth', '~> 6.0'
+  s.dependency 'FirebaseAuth'
   s.dependency 'Firebase/Core'
   s.static_framework = true
+
+  s.subspec 'FirebaseAuth' do |ss|
+    ss.source_files = '../../firebase-ios-auth/iOS/FirebaseAuth/Firebase/Auth/Source/**/*.{h,m}'
+  end
 
   s.prepare_command = <<-CMD
       echo // Generated file, do not edit > Classes/UserAgent.h

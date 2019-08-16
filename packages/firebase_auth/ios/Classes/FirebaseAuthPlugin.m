@@ -4,8 +4,13 @@
 
 #import "FirebaseAuthPlugin.h"
 #import "UserAgent.h"
-
+#import "FIRAuthProtoMfaEnrollment.h"
+#import "FIRPhoneMultiFactorInfo+Internal.h"
+#import "FIRMultiFactorAssertion.h";
+#import "FIRMultiFactorResolver+Internal.h"
 #import "Firebase/Firebase.h"
+#import "FIRMultiFactorSession+Internal.h"
+
 
 static NSString *getFlutterErrorCode(NSError *error) {
   NSString *code = [error userInfo][FIRAuthErrorUserInfoNameKey];
@@ -29,6 +34,8 @@ NSDictionary *toDictionary(id<FIRUserInfo> userInfo) {
 @interface FLTFirebaseAuthPlugin ()
 @property(nonatomic, retain) NSMutableDictionary *authStateChangeListeners;
 @property(nonatomic, retain) FlutterMethodChannel *channel;
+@property(nonatomic, retain) FIRMultiFactorResolver *verificationResolver;
+@property (nonatomic, assign) BOOL verificationMode;
 @end
 
 @implementation FLTFirebaseAuthPlugin
@@ -113,6 +120,12 @@ int nextHandle = 0;
     [[self getAuth:call.arguments]
         signInAndRetrieveDataWithCredential:[self getCredential:call.arguments]
                                  completion:^(FIRAuthDataResult *authResult, NSError *error) {
+                                   NSLog(@"\nError at sign in \n at 121 %@", error);
+                                  
+                                     NSLog(@"\nError at key code in \n at 121 %ld", (long)FIRAuthErrorCodeSecondFactorRequired);
+                                    if (error && error.code == FIRAuthErrorCodeSecondFactorRequired) {
+                                       self.verificationResolver = error.userInfo[FIRAuthErrorUserInfoMultiFactorResolverKey];
+                                    }
                                    [self sendResult:result
                                        forAuthDataResult:authResult
                                                    error:error];
@@ -345,6 +358,96 @@ int nextHandle = 0;
                  }
                }];
     result(nil);
+  } else if ([@"mfaVerifyPhoneNumberToEnroll" isEqualToString:call.method]) {
+    NSString *phoneNumber = call.arguments[@"phoneNumber"];
+    NSNumber *handle = call.arguments[@"handle"];
+    NSDictionary *dict = [[NSDictionary alloc] initWithObjectsAndKeys:phoneNumber, @"phoneInfo",  nil];
+    [[self getAuth:call.arguments].currentUser.multiFactor
+      getSessionWithCompletion:^(FIRMultiFactorSession *session, NSError * _Nullable error){
+          FIRAuthProtoMfaEnrollment *mfaEnrollment = [[FIRAuthProtoMfaEnrollment alloc] initWithDictionary: dict];
+          FIRPhoneMultiFactorInfo *info = [[FIRPhoneMultiFactorInfo alloc] initWithProto:mfaEnrollment];
+           [[FIRPhoneAuthProvider provider]
+              verifyPhoneNumberWithMultiFactorInfo:info
+                    UIDelegate:nil
+                    multiFactorSession: session
+                    completion:^(NSString *verificationID, NSError *error) {
+                                printf("came2^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^");
+                     
+                      if (error) {
+                        NSLog(@"\nerror in plugin %@", error); 
+                        [self.channel invokeMethod:@"phoneVerificationFailed"
+                                          arguments:@{
+                                            @"exception" : [self mapVerifyPhoneError:error],
+                                            @"handle" : handle
+                                          }];
+                      } else {
+                        [self.channel
+                            invokeMethod:@"phoneCodeSent"
+                                arguments:@{@"verificationId" : verificationID, @"handle" : handle}];
+                      }
+                    }];
+        }]; 
+
+    result(nil);
+  }else if ([@"mfaVerifyPhoneNumber" isEqualToString:call.method]) {
+    NSNumber *handle = call.arguments[@"handle"];
+    [[FIRPhoneAuthProvider provider]
+      verifyPhoneNumberWithMultiFactorInfo: self.verificationResolver.hints[0]
+            UIDelegate:nil
+            multiFactorSession: self.verificationResolver.session
+            completion:^(NSString *verificationID, NSError *error) {
+                        printf("came2^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^");
+              
+              if (error) {
+                NSLog(@"\nerror in plugin %@", error); 
+                [self.channel invokeMethod:@"phoneVerificationFailed"
+                                  arguments:@{
+                                    @"exception" : [self mapVerifyPhoneError:error],
+                                    @"handle" : handle
+                                  }];
+              } else {
+                [self.channel
+                    invokeMethod:@"phoneCodeSent"
+                        arguments:@{@"verificationId" : verificationID, @"handle" : handle}];
+              }
+            }];
+
+    result(nil);
+  } else if ([@"verifyCodeAndSignIn" isEqualToString:call.method]) {
+    NSString *verificationId = call.arguments[@"verificationId"];
+    NSString *verificationCode = call.arguments[@"smsCode"];
+    
+    FIRMultiFactorResolver *resolver =  self.verificationResolver;
+    FIRPhoneAuthCredential *credential =
+                  [[FIRPhoneAuthProvider provider] credentialWithVerificationID:verificationId
+                                                              verificationCode:verificationCode];
+    FIRMultiFactorAssertion *assertion = [FIRPhoneMultiFactorGenerator assertionWithCredential:credential];
+    [resolver resolveSignInWithAssertion:assertion completion:^(FIRAuthDataResult * _Nullable authResult, NSError * _Nullable error) {
+      if (error) {
+        NSLog(@"Multi factor finanlize sign in failed. Error: %@", error.description);
+        [self sendResult:result forAuthDataResult:nil error:error];
+      } else {
+        [self sendResult:result forAuthDataResult:authResult error:error];
+      }
+    }];
+
+  } else if ([@"verifyCodeAndEnrollMfa" isEqualToString:call.method]) {
+    NSString *verificationId = call.arguments[@"verificationId"];
+    NSString *verificationCode = call.arguments[@"smsCode"];
+    FIRPhoneAuthCredential *credential =
+                     [[FIRPhoneAuthProvider provider] credentialWithVerificationID:verificationId
+                                                                  verificationCode:verificationCode];
+    FIRMultiFactorAssertion *assertion = [FIRPhoneMultiFactorGenerator assertionWithCredential:credential];
+    [[self getAuth:call.arguments].currentUser.multiFactor
+      enrollWithAssertion: assertion
+      displayName: nil
+      completion: ^(NSError * _Nullable error){
+        if(error){
+          NSLog(@"\n error at enroll \n %@", error);
+        }
+        [self sendResult:result forAuthDataResult:nil error:error];
+    }];
+
   } else if ([@"signInWithPhoneNumber" isEqualToString:call.method]) {
     NSString *verificationId = call.arguments[@"verificationId"];
     NSString *smsCode = call.arguments[@"smsCode"];
@@ -428,7 +531,7 @@ int nextHandle = 0;
 
 - (id)mapVerifyPhoneError:(NSError *)error {
   NSString *errorCode = @"verifyPhoneNumberError";
-
+    NSLog(@"the error is%@", error);
   if (error.code == FIRAuthErrorCodeCaptchaCheckFailed) {
     errorCode = @"captchaCheckFailed";
   } else if (error.code == FIRAuthErrorCodeQuotaExceeded) {

@@ -229,6 +229,34 @@ class FirebaseAuth {
     return signInWithCredential(credential);
   }
 
+  /// Tries to reauthenticate a user with the given email address and password.
+  ///
+  /// If successful, it also signs the user in into the app and updates
+  /// the [onAuthStateChanged] stream.
+  ///
+  /// **Important**: You must enable Email & Password accounts in the Auth
+  /// section of the Firebase console before being able to use them.
+  ///
+  /// Errors:
+  ///   • `ERROR_INVALID_EMAIL` - If the [email] address is malformed.
+  ///   • `ERROR_WRONG_PASSWORD` - If the [password] is wrong.
+  ///   • `ERROR_USER_NOT_FOUND` - If there is no user corresponding to the given [email] address, or if the user has been deleted.
+  ///   • `ERROR_USER_DISABLED` - If the user has been disabled (for example, in the Firebase console)
+  ///   • `ERROR_TOO_MANY_REQUESTS` - If there was too many attempts to sign in as this user.
+  ///   • `ERROR_OPERATION_NOT_ALLOWED` - Indicates that Email & Password accounts are not enabled.
+  Future<AuthResult> reauthenticateWithEmailAndPassword({
+    @required String email,
+    @required String password,
+  }) {
+    assert(email != null);
+    assert(password != null);
+    final AuthCredential credential = EmailAuthProvider.getCredential(
+      email: email,
+      password: password,
+    );
+    return reauthenticateWithCredential(credential);
+  }
+
   /// Asynchronously signs in to Firebase with the given 3rd-party credentials
   /// (e.g. a Facebook login Access Token, a Google ID Token/Access Token pair,
   /// etc.) and returns additional identity provider data.
@@ -255,6 +283,40 @@ class FirebaseAuth {
     final Map<String, dynamic> data =
         await channel.invokeMapMethod<String, dynamic>(
       'signInWithCredential',
+      <String, dynamic>{
+        'app': app.name,
+        'provider': credential._provider,
+        'data': credential._data,
+      },
+    );
+    final AuthResult authResult = AuthResult._(data, app);
+    return authResult;
+  }
+
+  /// Asynchronously reauthenticates in to Firebase with the given 3rd-party credentials
+  ///
+  /// If successful, it also signs the user in into the app and updates
+  /// the [onAuthStateChanged] stream.
+  ///
+  /// If the user doesn't have an account already, one will be created automatically.
+  ///
+  /// **Important**: You must enable the relevant accounts in the Auth section
+  /// of the Firebase console before being able to use them.
+  ///
+  /// Errors:
+  ///   • `ERROR_INVALID_CREDENTIAL` - If the credential data is malformed or has expired.
+  ///   • `ERROR_USER_DISABLED` - If the user has been disabled (for example, in the Firebase console)
+  ///   • `ERROR_ACCOUNT_EXISTS_WITH_DIFFERENT_CREDENTIAL` - If there already exists an account with the email address asserted by Google.
+  ///       Resolve this case by calling [fetchSignInMethodsForEmail] and then asking the user to sign in using one of them.
+  ///       This error will only be thrown if the "One account per email address" setting is enabled in the Firebase console (recommended).
+  ///   • `ERROR_OPERATION_NOT_ALLOWED` - Indicates that Google accounts are not enabled.
+  ///   • `ERROR_INVALID_ACTION_CODE` - If the action code in the link is malformed, expired, or has already been used.
+  ///       This can only occur when using [EmailAuthProvider.getCredentialWithLink] to obtain the credential.
+  Future<AuthResult> reauthenticateWithCredential(AuthCredential credential) async {
+    assert(credential != null);
+    final Map<String, dynamic> data =
+        await channel.invokeMapMethod<String, dynamic>(
+      'reauthenticateWithCredential',
       <String, dynamic>{
         'app': app.name,
         'provider': credential._provider,
@@ -335,6 +397,92 @@ class FirebaseAuth {
     };
 
     await channel.invokeMethod<void>('verifyPhoneNumber', params);
+  }
+
+  Future<void> mfaVerifyPhoneNumber({
+    @required Duration timeout,
+    int forceResendingToken,
+    @required PhoneVerificationCompleted verificationCompleted,
+    @required PhoneVerificationFailed verificationFailed,
+    @required PhoneCodeSent codeSent,
+    @required PhoneCodeAutoRetrievalTimeout codeAutoRetrievalTimeout,
+  }) async {
+    final Map<String, dynamic> callbacks = <String, dynamic>{
+      'PhoneVerificationCompleted': verificationCompleted,
+      'PhoneVerificationFailed': verificationFailed,
+      'PhoneCodeSent': codeSent,
+      'PhoneCodeAuthRetrievalTimeout': codeAutoRetrievalTimeout,
+    };
+    _nextHandle += 1;
+    _phoneAuthCallbacks[_nextHandle] = callbacks;
+
+    final Map<String, dynamic> params = <String, dynamic>{
+      'handle': _nextHandle,
+      'timeout': timeout.inMilliseconds,
+      'forceResendingToken': forceResendingToken,
+      'app': app.name,
+    };
+
+    await channel.invokeMethod<void>('mfaVerifyPhoneNumber', params);
+  }
+
+  Future<void> mfaVerifyPhoneNumberToEnroll({
+    @required String phoneNumber,
+    @required Duration timeout,
+    int forceResendingToken,
+    @required PhoneVerificationCompleted verificationCompleted,
+    @required PhoneVerificationFailed verificationFailed,
+    @required PhoneCodeSent codeSent,
+    @required PhoneCodeAutoRetrievalTimeout codeAutoRetrievalTimeout,
+  }) async {
+    final Map<String, dynamic> callbacks = <String, dynamic>{
+      'PhoneVerificationCompleted': verificationCompleted,
+      'PhoneVerificationFailed': verificationFailed,
+      'PhoneCodeSent': codeSent,
+      'PhoneCodeAuthRetrievalTimeout': codeAutoRetrievalTimeout,
+    };
+    _nextHandle += 1;
+    _phoneAuthCallbacks[_nextHandle] = callbacks;
+
+    final Map<String, dynamic> params = <String, dynamic>{
+      'handle': _nextHandle,
+      'phoneNumber': phoneNumber,
+      'timeout': timeout.inMilliseconds,
+      'forceResendingToken': forceResendingToken,
+      'app': app.name,
+    };
+
+    await channel.invokeMethod<void>('mfaVerifyPhoneNumberToEnroll', params);
+  }
+
+  Future<void> verifyCodeAndEnrollMfa({
+    @required String verificationId,
+    @required String smsCode,
+  }) async {
+    final Map<String, dynamic> params = <String, dynamic>{
+      'verificationId': verificationId,
+      'smsCode': smsCode,
+      'phoneNumber': (await currentUser()).phoneNumber,
+      'app': app.name,
+    };
+
+    await channel.invokeMethod<void>('verifyCodeAndEnrollMfa', params);
+  }
+
+  Future<AuthResult> verifyCodeAndSignIn({
+    @required String verificationId,
+    @required String smsCode,
+  }) async {
+    final Map<String, dynamic> data =
+        await channel.invokeMapMethod<String, dynamic>(
+      'verifyCodeAndSignIn',
+      <String, dynamic>{
+        'verificationId': verificationId,
+        'smsCode': smsCode,
+      },
+    );
+    final AuthResult authResult = AuthResult._(data, app);
+    return authResult;
   }
 
   /// Tries to sign in a user with a given Custom Token [token].
