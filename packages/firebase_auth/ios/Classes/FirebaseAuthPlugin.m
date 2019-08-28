@@ -88,7 +88,7 @@ int nextHandle = 0;
 
 - (void)application:(UIApplication *)application
     didRegisterForRemoteNotificationsWithDeviceToken:(NSData *)deviceToken {
-  [[FIRAuth auth] setAPNSToken:deviceToken type:FIRAuthAPNSTokenTypeProd];
+  [[FIRAuth auth] setAPNSToken:deviceToken type:FIRAuthAPNSTokenTypeUnknown];
 }
 
 - (BOOL)application:(UIApplication *)app openURL:(NSURL *)url options:(NSDictionary *)options {
@@ -391,6 +391,11 @@ int nextHandle = 0;
     result(nil);
   }else if ([@"mfaVerifyPhoneNumber" isEqualToString:call.method]) {
     NSNumber *handle = call.arguments[@"handle"];
+      for (FIRMultiFactorInfo *tmpFactorInfo in self.verificationResolver.hints) {
+          NSLog(@"\n multi factor info %@", tmpFactorInfo.displayName);
+           NSLog(@"\n multi factor info %@", tmpFactorInfo.factorID);
+           NSLog(@"\n multi factor info %@", tmpFactorInfo.uid);
+      }
     [[FIRPhoneAuthProvider provider]
       verifyPhoneNumberWithMultiFactorInfo: self.verificationResolver.hints[0]
             UIDelegate:nil
@@ -448,7 +453,17 @@ int nextHandle = 0;
         [self sendResult:result forAuthDataResult:nil error:error];
     }];
 
-  } else if ([@"signInWithPhoneNumber" isEqualToString:call.method]) {
+  } else if ([@"unenrollFromMfa" isEqualToString:call.method]) {
+    [[self getAuth:call.arguments].currentUser.multiFactor
+      unenrollWithInfo: self.verificationResolver.hints[0]
+      completion: ^(NSError * _Nullable error){
+        if(error){
+          NSLog(@"\n error at un enrolling \n %@", error);
+        }
+        [self sendResult:result forAuthDataResult:nil error:error];
+    }];
+
+  }else if ([@"signInWithPhoneNumber" isEqualToString:call.method]) {
     NSString *verificationId = call.arguments[@"verificationId"];
     NSString *smsCode = call.arguments[@"smsCode"];
 

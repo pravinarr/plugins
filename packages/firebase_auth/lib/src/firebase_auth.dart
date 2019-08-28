@@ -469,6 +469,15 @@ class FirebaseAuth {
     await channel.invokeMethod<void>('verifyCodeAndEnrollMfa', params);
   }
 
+  /// unenroll from 2 factor Authorization
+  Future<void> unenrollMfa() async {
+    final Map<String, dynamic> params = <String, dynamic>{
+      'app': app.name,
+    };
+
+    await channel.invokeMethod<void>('unenrollFromMfa', params);
+  }
+
   Future<AuthResult> verifyCodeAndSignIn({
     @required String verificationId,
     @required String smsCode,
