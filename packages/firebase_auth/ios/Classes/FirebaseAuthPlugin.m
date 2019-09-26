@@ -248,6 +248,9 @@ int nextHandle = 0;
         reauthenticateAndRetrieveDataWithCredential:[self getCredential:call.arguments]
                                          completion:^(FIRAuthDataResult *r,
                                                       NSError *_Nullable error) {
+                                           if (error && error.code == FIRAuthErrorCodeSecondFactorRequired) {
+                                             self.verificationResolver = error.userInfo[FIRAuthErrorUserInfoMultiFactorResolverKey];
+                                           }
                                            [self sendResult:result forObject:nil error:error];
                                          }];
   } else if ([@"linkWithCredential" isEqualToString:call.method]) {
