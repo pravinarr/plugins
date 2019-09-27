@@ -488,6 +488,7 @@ class FirebaseAuth {
       <String, dynamic>{
         'verificationId': verificationId,
         'smsCode': smsCode,
+        'app': app.name,
       },
     );
     final AuthResult authResult = AuthResult._(data, app);

@@ -789,6 +789,11 @@ public class FirebaseAuthPlugin implements MethodCallHandler {
         @Override
         public void onComplete(@NonNull Task<Void> task) {
             if (!task.isSuccessful()) {
+               if (task.getException() instanceof FirebaseAuthMultiFactorException) {
+                    FirebaseAuthMultiFactorException e =
+                            (FirebaseAuthMultiFactorException) task.getException();
+                    multiFactorResolver = e.getResolver();
+                }
                 reportException(result, task.getException());
             } else {
                 result.success(null);
